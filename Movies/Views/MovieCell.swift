@@ -6,6 +6,9 @@
 //
 
 import UIKit
+import SDWebImage
+
+typealias EventClosure<T> = (T) -> ()
 
 class MovieCell: UICollectionViewCell {
 
@@ -15,7 +18,17 @@ class MovieCell: UICollectionViewCell {
     @IBOutlet weak var titleLabel: UILabel!
     @IBOutlet weak var favoriteButton: UIButton!
     
-    func config(title: String) {
+    var favoriteChanged: EventClosure<Bool>?
+    
+    func config(title: String, imageURL: String?, isFavorite: Bool) {
         titleLabel.text = title
+        if let imageURL {
+            imageView.sd_setImage(with: URL(string: imageURL))
+        }
+        favoriteButton.isSelected = isFavorite
+    }
+    
+    @IBAction func favoriteAction(sender: UIButton) {
+        favoriteChanged?(!sender.isSelected)
     }
 }

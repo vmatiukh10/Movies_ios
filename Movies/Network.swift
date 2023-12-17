@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Network
 
 struct PagingResponse<T: Codable>: Codable {
     enum CodingKeys: String, CodingKey {
@@ -32,6 +33,7 @@ struct PagingResponse<T: Codable>: Codable {
         try container.encode(totalResults, forKey: .totalResults)
         try container.encode(results, forKey: .results)
     }
+
 }
 
 class Network {
@@ -43,10 +45,13 @@ class Network {
         return URLSession(configuration: configuration)
     }()
     
-    private let baseURL = "https://api.themoviedb.org/3/"
+    private let networkMonitor = NWPathMonitor()
+    
+    private let baseURL = "https://api.themoviedb.org/3"
+    private let imageBaseURL = "https://image.tmdb.org/t/p"
     
     enum Path: String {
-        case popularMovies = "movie/popular"
+        case popularMovies = "/movie/popular"
     }
     
     enum RequestError: Error {
@@ -57,9 +62,28 @@ class Network {
         case GET, POST
     }
     
+    private var networkAvailable: Bool = false {
+        didSet {
+            networkAvailablityChanged?(networkAvailable)
+        }
+    }
+    var networkAvailablityChanged: ((Bool) -> ())?
+    
+    init() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            if path.status == .satisfied {
+                self?.networkAvailable = true
+            } else {
+                self?.networkAvailable = false
+            }
+        }
+        let queue = DispatchQueue(label: "NetworkMonitor")
+        networkMonitor.start(queue: queue)
+    }
+    
     private func urlForPath(_ path: Path, params: [String: Any]) -> URL {
         var components = URLComponents(string: baseURL + path.rawValue)!
-
+        
         components.queryItems = params.compactMap {
             return URLQueryItem(name: $0.key, value: String(describing: $0.value))
         } + [URLQueryItem(name: "language", value: "en-US")]
@@ -73,18 +97,18 @@ class Network {
     private let headers =  [
         "accept": "application/json",
         "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIzMzA1ZjMyNGYyNjViNGZiNDdlNDhlYTAyZjcyMDdiZSIsInN1YiI6IjY1N2E0YmJiN2VjZDI4MDExZWYyMTIwMyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.QoRCx98Wk4LXGsTrk2OfhBiSzLxqLIgNQ5lmSQr1pos"
-      ]
+    ]
     
-    func loadMovies(page: Int = 1) async -> Result<[Movie], RequestError> {
+    func loadMovies(page: Int = 1) async -> Result<([Movie], Int), RequestError> {
         let result = await makeRequest(requestFor(.popularMovies, params: ["page": page]))
         switch result {
         case .success(let data):
             guard let data else {
-                return .success([])
+                return .success(([], 1))
             }
             let decoder = JSONDecoder()
             let response = try! decoder.decode(PagingResponse<[Movie]>.self, from: data)
-            return .success(response.results)
+            return .success((response.results, response.totaPages))
         case .failure(let error):
             return .failure(error)
         }
@@ -106,5 +130,12 @@ class Network {
             return .failure(.failed)
         }
     }
+    
+    
+    func imageURL(_ path: String) -> String {
+        let sizePath = "/original"
+        return imageBaseURL + sizePath + path
+    }
+
 }
 
